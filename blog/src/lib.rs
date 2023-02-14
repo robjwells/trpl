@@ -12,7 +12,9 @@ impl Post {
     }
 
     pub fn add_text(&mut self, text: &str) {
-        self.content.push_str(text);
+        if let Some(s) = self.state.as_ref() {
+            self.content = s.add_text(&self.content, text);
+        }
     }
 
     pub fn content(&self) -> &str {
@@ -30,6 +32,12 @@ impl Post {
             self.state = Some(s.approve());
         }
     }
+
+    pub fn reject(&mut self) {
+        if let Some(s) = self.state.take() {
+            self.state = Some(s.reject());
+        }
+    }
 }
 
 impl Default for Post {
@@ -41,32 +49,67 @@ impl Default for Post {
 trait State {
     fn request_review(self: Box<Self>) -> Box<dyn State>;
     fn approve(self: Box<Self>) -> Box<dyn State>;
+    fn reject(self: Box<Self>) -> Box<dyn State>;
 
     #[allow(unused_variables)]
     fn content<'a>(&self, post: &'a Post) -> &'a str {
         ""
+    }
+
+    #[allow(unused_variables)]
+    fn add_text(&self, existing: &str, added: &str) -> String {
+        existing.into()
     }
 }
 
 struct Draft {}
 impl State for Draft {
     fn request_review(self: Box<Self>) -> Box<dyn State> {
-        Box::new(PendingReview {})
+        Box::new(PendingReview::new())
     }
 
     fn approve(self: Box<Self>) -> Box<dyn State> {
         self
     }
+
+    fn reject(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+
+    fn add_text(&self, existing: &str, added: &str) -> String {
+        format!("{}{}", existing, added)
+    }
 }
 
-struct PendingReview {}
+struct PendingReview {
+    approved_once: bool,
+}
+
+impl PendingReview {
+    fn new() -> Self {
+        Self {
+            approved_once: false,
+        }
+    }
+}
+
 impl State for PendingReview {
     fn request_review(self: Box<Self>) -> Box<dyn State> {
         self
     }
 
     fn approve(self: Box<Self>) -> Box<dyn State> {
-        Box::new(Published {})
+        if !self.approved_once {
+            Box::new(PendingReview {
+                approved_once: true,
+            })
+        } else {
+            Box::new(Published {})
+        }
+    }
+
+    fn reject(self: Box<Self>) -> Box<dyn State> {
+        Box::new(Draft {})
     }
 }
 
@@ -82,5 +125,9 @@ impl State for Published {
 
     fn content<'a>(&self, post: &'a Post) -> &'a str {
         &post.content
+    }
+
+    fn reject(self: Box<Self>) -> Box<dyn State> {
+        self
     }
 }
