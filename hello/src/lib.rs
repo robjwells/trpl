@@ -1,14 +1,16 @@
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+type Job = Box<dyn FnOnce() + Send + 'static>;
+type Receiver = Arc<Mutex<mpsc::Receiver<Job>>>;
+
+#[allow(dead_code)]
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<Job>,
 }
 
 pub struct PoolCreationError;
-
-type Receiver = Arc<Mutex<mpsc::Receiver<Job>>>;
 
 impl ThreadPool {
     /// Creates a new [`ThreadPool`].
@@ -25,9 +27,9 @@ impl ThreadPool {
 
         let receiver = Arc::new(Mutex::new(receiver));
 
-        let workers = (0..size).map(|id| {
-            Worker::new(id, Arc::clone(&receiver))
-        }).collect();
+        let workers = (0..size)
+            .map(|id| Worker::new(id, Arc::clone(&receiver)))
+            .collect();
         ThreadPool { workers, sender }
     }
 
@@ -46,13 +48,16 @@ impl ThreadPool {
         }
     }
 
-    pub fn execute<F>(&self, _f: F)
+    pub fn execute<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static,
     {
+        let job = Box::new(f);
+        self.sender.send(job).unwrap();
     }
 }
 
+#[allow(dead_code)]
 struct Worker {
     id: usize,
     thread: JoinHandle<()>,
@@ -60,13 +65,12 @@ struct Worker {
 
 impl Worker {
     fn new(id: usize, receiver: Receiver) -> Worker {
-        Worker {
-            id,
-            thread: thread::spawn(|| {
-                receiver;
-            }),
-        }
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+            println!("Worker {id} got a job; executing.");
+            job();
+        });
+
+        Worker { id, thread }
     }
 }
-
-struct Job;
