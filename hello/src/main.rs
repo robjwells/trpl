@@ -1,7 +1,9 @@
 use std::{
     fs,
     io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream}, time::Duration, thread,
+    net::{TcpListener, TcpStream},
+    thread,
+    time::Duration,
 };
 
 use hello::ThreadPool;
@@ -11,12 +13,14 @@ fn main() {
     println!("Bound to :7878");
 
     let pool = ThreadPool::new(4);
-    for stream in listener.incoming() {
+    for stream in listener.incoming().take(2) {
         let stream = stream.unwrap();
         pool.execute(|| {
             handle_connection(stream);
         });
     }
+
+    println!("Shutting down.");
 }
 
 fn handle_connection(mut stream: TcpStream) {
@@ -29,7 +33,7 @@ fn handle_connection(mut stream: TcpStream) {
         "GET /sleep HTTP/1.1" => {
             thread::sleep(Duration::from_secs(5));
             ("HTTP/1.1 200 OK", "hello.html")
-        },
+        }
         _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
     };
 
